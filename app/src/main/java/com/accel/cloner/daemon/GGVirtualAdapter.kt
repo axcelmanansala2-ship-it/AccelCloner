@@ -48,7 +48,7 @@ object GGVirtualAdapter {
     fun attachToVirtualProcess(context: Context, targetPkg: String, cloneIndex: Int = 0): Boolean {
         Log.d(TAG, "Attaching GG to virtual app: $targetPkg")
 
-        val virtualDir = VirtualConfig.virtualDataPath(targetPkg, cloneIndex)
+        val virtualDir = VirtualConfig.virtualDataPath(context, targetPkg, cloneIndex)
 
         // 1. Open permissions on virtual dir (we own it, so chmod works without root)
         val chmodResult = VirtualRootSim.exec("chmod -R 0777 \"$virtualDir\"")
@@ -100,8 +100,8 @@ fi
 """.trimIndent())
     }
 
-    fun detach(targetPkg: String, cloneIndex: Int = 0) {
-        val virtualDir = VirtualConfig.virtualDataPath(targetPkg, cloneIndex)
+    fun detach(context: Context, targetPkg: String, cloneIndex: Int = 0) {
+        val virtualDir = VirtualConfig.virtualDataPath(context, targetPkg, cloneIndex)
         VirtualRootSim.exec("chmod -R 0771 \"$virtualDir\"")
         File("$virtualDir/gg_pipe").delete()
         File("$virtualDir/gg_virtual_config.json").delete()
