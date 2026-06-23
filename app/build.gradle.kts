@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
     id("kotlin-kapt")
 }
 
@@ -43,7 +44,7 @@ android {
     }
 
     buildFeatures {
-        viewBinding = true
+        compose = true
         buildConfig = true
     }
 
@@ -61,14 +62,25 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
-    implementation(libs.androidx.activity)
-    implementation(libs.androidx.constraintlayout)
-    implementation(libs.androidx.recyclerview)
-    implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
-    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     kapt(libs.androidx.room.compiler)
+
+    // Compose
+    val composeBom = platform(libs.compose.bom)
+    implementation(composeBom)
+    implementation(libs.compose.ui)
+    implementation(libs.compose.ui.graphics)
+    implementation(libs.compose.ui.tooling.preview)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.icons.extended)
+    implementation(libs.compose.animation)
+    implementation(libs.activity.compose)
+    implementation(libs.lifecycle.runtime.compose)
+    implementation(libs.navigation.compose)
+    implementation(libs.coil.compose)
+    debugImplementation(libs.compose.ui.tooling)
 }
