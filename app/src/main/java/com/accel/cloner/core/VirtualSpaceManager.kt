@@ -3,39 +3,15 @@ package com.accel.cloner.core
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
-import android.graphics.drawable.Drawable
 import android.util.Log
-import com.accel.cloner.core.VirtualFileSystem.formatSize
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
-
-data class AppInfo(
-    val packageName: String,
-    val appName: String,
-    val icon: Drawable?,
-    val versionName: String,
-    val versionCode: Long,
-    val isSystemApp: Boolean,
-    val sourceApk: String,
-    val sizeBytes: Long = 0L
-)
-
-data class ClonedApp(
-    val packageName: String,
-    val appName: String,
-    val icon: Drawable?,
-    val cloneIndex: Int,
-    val virtualDataPath: String,
-    val sizeBytes: Long
-)
 
 class VirtualSpaceManager(private val context: Context) {
     private val TAG = "VirtualSpaceManager"
     private val pm: PackageManager = context.packageManager
     private val prefs = context.getSharedPreferences("virtual_space", Context.MODE_PRIVATE)
-
-    // ── Installed apps ────────────────────────────────────────────────────────
 
     suspend fun getInstallableApps(): List<AppInfo> = withContext(Dispatchers.IO) {
         pm.getInstalledPackages(PackageManager.GET_META_DATA)
@@ -56,13 +32,11 @@ class VirtualSpaceManager(private val context: Context) {
             .sortedBy { it.appName }
     }
 
-    // ── Cloned apps ───────────────────────────────────────────────────────────
-
     suspend fun getClonedApps(): List<ClonedApp> = withContext(Dispatchers.IO) {
         prefs.all.keys
             .filter { it.startsWith("clone_") }
             .mapNotNull { key ->
-                val pkg = prefs.getString(key, null) ?: return@mapNotNull null
+                prefs.getString(key, null) ?: return@mapNotNull null
                 val parts = key.removePrefix("clone_").split("_")
                 val packageName = parts.dropLast(1).joinToString("_")
                 val index = parts.last().toIntOrNull() ?: 0
@@ -83,27 +57,20 @@ class VirtualSpaceManager(private val context: Context) {
             }
     }
 
-    // ── Clone an app ──────────────────────────────────────────────────────────
-
     suspend fun cloneApp(pkg: String, cloneIndex: Int = 1): VirtualSpaceResult =
         withContext(Dispatchers.IO) {
             Log.d(TAG, "Cloning $pkg index=$cloneIndex")
             try {
-                // 1. Init virtual file system dirs
                 val ok = VirtualFileSystem.initVirtualSpace(pkg, cloneIndex)
                 if (!ok) return@withContext VirtualSpaceResult.Failure("Failed to create virtual dirs")
 
-                // 2. Copy APK into virtual space (for DexClassLoader later)
                 val sourceApk = pm.getApplicationInfo(pkg, 0).sourceDir
                 val destApk = File(VirtualConfig.pluginApkPath(pkg, cloneIndex))
                 if (!destApk.exists()) {
                     VirtualFileSystem.copyFile(File(sourceApk), destApk)
                 }
 
-                // 3. Apply virtual chmod (no root needed — we own these dirs)
                 VirtualRootSim.exec("chmod -R 0771 \"${VirtualConfig.virtualDataPath(pkg, cloneIndex)}\"")
-
-                // 4. Save record
                 prefs.edit().putString("clone_${pkg}_$cloneIndex", pkg).apply()
 
                 val path = VirtualConfig.virtualDataPath(pkg, cloneIndex)
@@ -114,8 +81,6 @@ class VirtualSpaceManager(private val context: Context) {
                 VirtualSpaceResult.Failure(e.message ?: "Unknown error")
             }
         }
-
-    // ── Remove clone ──────────────────────────────────────────────────────────
 
     suspend fun removeClone(pkg: String, cloneIndex: Int): Boolean =
         withContext(Dispatchers.IO) {
