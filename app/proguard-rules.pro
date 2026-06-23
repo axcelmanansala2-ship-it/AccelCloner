@@ -1,0 +1,3 @@
+-keep class com.accel.cloner.** { *; }
+-keepattributes *Annotation*
+-dontwarn okhttp3.**
