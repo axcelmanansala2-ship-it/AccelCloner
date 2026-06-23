@@ -41,6 +41,7 @@ class VirtualSpaceManager(private val context: Context) {
                 val packageName = parts.dropLast(1).joinToString("_")
                 val index = parts.last().toIntOrNull() ?: 0
                 val vPath = VirtualConfig.virtualDataPath(context, packageName, index)
+                val clonePkg = prefs.getString("clonepkg_${packageName}_$index", "") ?: ""
                 try {
                     val pi = pm.getPackageInfo(packageName, 0)
                     ClonedApp(
@@ -49,10 +50,11 @@ class VirtualSpaceManager(private val context: Context) {
                         icon = pi.applicationInfo?.loadIcon(pm),
                         cloneIndex = index,
                         virtualDataPath = vPath,
-                        sizeBytes = VirtualFileSystem.getVirtualSize(context, packageName, index)
+                        sizeBytes = VirtualFileSystem.getVirtualSize(context, packageName, index),
+                        clonedPackageName = clonePkg
                     )
                 } catch (e: Exception) {
-                    ClonedApp(packageName, packageName, null, index, vPath, 0L)
+                    ClonedApp(packageName, packageName, null, index, vPath, 0L, clonePkg)
                 }
             }
     }
@@ -65,17 +67,22 @@ class VirtualSpaceManager(private val context: Context) {
                 if (!ok) return@withContext VirtualSpaceResult.Failure("Failed to create virtual dirs")
 
                 val sourceApk = pm.getApplicationInfo(pkg, 0).sourceDir
-                val destApk = File(VirtualConfig.pluginApkPath(context, pkg, cloneIndex))
-                if (!destApk.exists()) {
-                    VirtualFileSystem.copyFile(File(sourceApk), destApk)
+                val workDir = File(VirtualConfig.virtualDataPath(context, pkg, cloneIndex), "install_work")
+
+                val result = CloneInstallManager.install(context, pkg, cloneIndex, sourceApk, workDir)
+                when (result) {
+                    is CloneInstallResult.Success -> {
+                        prefs.edit()
+                            .putString("clone_${pkg}_$cloneIndex", pkg)
+                            .putString("clonepkg_${pkg}_$cloneIndex", result.clonePkg)
+                            .apply()
+                        val path = VirtualConfig.virtualDataPath(context, pkg, cloneIndex)
+                        Log.d(TAG, "Clone success: $pkg → ${result.clonePkg}")
+                        VirtualSpaceResult.Success(pkg, cloneIndex, path, result.clonePkg)
+                    }
+                    is CloneInstallResult.Failure ->
+                        VirtualSpaceResult.Failure(result.reason)
                 }
-
-                VirtualRootSim.exec("chmod -R 0771 \"${VirtualConfig.virtualDataPath(context, pkg, cloneIndex)}\"")
-                prefs.edit().putString("clone_${pkg}_$cloneIndex", pkg).apply()
-
-                val path = VirtualConfig.virtualDataPath(context, pkg, cloneIndex)
-                Log.d(TAG, "Clone success: $pkg -> $path")
-                VirtualSpaceResult.Success(pkg, cloneIndex, path)
             } catch (e: Exception) {
                 Log.e(TAG, "Clone failed: ${e.message}")
                 VirtualSpaceResult.Failure(e.message ?: "Unknown error")
@@ -84,8 +91,17 @@ class VirtualSpaceManager(private val context: Context) {
 
     suspend fun removeClone(pkg: String, cloneIndex: Int): Boolean =
         withContext(Dispatchers.IO) {
+            val clonePkg = prefs.getString("clonepkg_${pkg}_$cloneIndex", null)
+            if (!clonePkg.isNullOrEmpty()) {
+                CloneInstallManager.uninstall(context, clonePkg)
+            }
             val cleared = VirtualFileSystem.clearVirtualSpace(context, pkg, cloneIndex)
-            if (cleared) prefs.edit().remove("clone_${pkg}_$cloneIndex").apply()
+            if (cleared) {
+                prefs.edit()
+                    .remove("clone_${pkg}_$cloneIndex")
+                    .remove("clonepkg_${pkg}_$cloneIndex")
+                    .apply()
+            }
             cleared
         }
 
@@ -101,6 +117,11 @@ class VirtualSpaceManager(private val context: Context) {
 }
 
 sealed class VirtualSpaceResult {
-    data class Success(val pkg: String, val cloneIndex: Int, val path: String) : VirtualSpaceResult()
+    data class Success(
+        val pkg: String,
+        val cloneIndex: Int,
+        val path: String,
+        val clonePkg: String
+    ) : VirtualSpaceResult()
     data class Failure(val reason: String) : VirtualSpaceResult()
 }

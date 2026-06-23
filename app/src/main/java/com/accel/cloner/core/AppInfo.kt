@@ -21,5 +21,6 @@ data class ClonedApp(
     val icon: Drawable?,
     val cloneIndex: Int,
     val virtualDataPath: String,
-    val sizeBytes: Long
+    val sizeBytes: Long,
+    val clonedPackageName: String = ""
 )

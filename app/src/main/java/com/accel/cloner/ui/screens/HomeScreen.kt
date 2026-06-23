@@ -17,14 +17,12 @@ import androidx.compose.ui.graphics.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.*
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.accel.cloner.core.*
 import com.accel.cloner.daemon.GGVirtualAdapter
 import com.accel.cloner.daemon.VirtualDaemonService
 import com.accel.cloner.ui.theme.*
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,7 +57,7 @@ fun HomeScreen(onPickApp: () -> Unit) {
                 title = {
                     Column {
                         Text("AccelCloner", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                        Text("Virtual Space • No Root Required",
+                        Text("Clone & Launch • No Root Required",
                             fontSize = 11.sp, color = OnSurfaceMuted)
                     }
                 },
@@ -85,39 +83,39 @@ fun HomeScreen(onPickApp: () -> Unit) {
     ) { pad ->
         Box(Modifier.fillMaxSize().padding(pad)) {
             when {
-                isLoading -> {
-                    CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.Center),
-                        color = VioletPrimary
-                    )
-                }
+                isLoading -> CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center),
+                    color = VioletPrimary
+                )
                 clonedApps.isEmpty() -> EmptyState(onPickApp)
-                else -> {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        item { VirtualSpaceHeader(clonedApps.size) }
-                        items(clonedApps, key = { "${it.packageName}_${it.cloneIndex}" }) { app ->
-                            ClonedAppCard(
-                                app = app,
-                                ggInstalled = ggInstalled,
-                                onRemove = {
-                                    scope.launch {
-                                        manager.removeClone(app.packageName, app.cloneIndex)
-                                        reload()
-                                        snackMsg = "Removed ${app.appName}"
-                                    }
-                                },
-                                onGGAttach = {
-                                    VirtualDaemonService.attachGG(ctx, app.packageName)
-                                    snackMsg = "GG attached to ${app.appName} in virtual space"
+                else -> LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    item { VirtualSpaceHeader(clonedApps.size) }
+                    items(clonedApps, key = { "${it.packageName}_${it.cloneIndex}" }) { app ->
+                        ClonedAppCard(
+                            app = app,
+                            ggInstalled = ggInstalled,
+                            onOpen = {
+                                val launched = CloneInstallManager.launch(ctx, app.clonedPackageName)
+                                if (!launched) snackMsg = "Install the clone first — check system notifications"
+                            },
+                            onRemove = {
+                                scope.launch {
+                                    manager.removeClone(app.packageName, app.cloneIndex)
+                                    reload()
+                                    snackMsg = "Removed ${app.appName}"
                                 }
-                            )
-                        }
-                        item { Spacer(Modifier.height(80.dp)) }
+                            },
+                            onGGAttach = {
+                                VirtualDaemonService.attachGG(ctx, app.packageName)
+                                snackMsg = "GG attached to ${app.appName}"
+                            }
+                        )
                     }
+                    item { Spacer(Modifier.height(80.dp)) }
                 }
             }
         }
@@ -131,14 +129,9 @@ private fun VirtualSpaceHeader(count: Int) {
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = VioletContainer)
     ) {
-        Row(
-            Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
+                Modifier.size(48.dp).clip(CircleShape)
                     .background(VioletPrimary.copy(alpha = 0.2f)),
                 contentAlignment = Alignment.Center
             ) {
@@ -147,17 +140,16 @@ private fun VirtualSpaceHeader(count: Int) {
             Spacer(Modifier.width(12.dp))
             Column {
                 Text("Virtual Space Active", fontWeight = FontWeight.Bold, color = OnSurfaceLight)
-                Text("$count app${if (count != 1) "s" else ""} cloned • Self-rooted environment",
+                Text("$count app${if (count != 1) "s" else ""} cloned • Tap Open to launch",
                     fontSize = 12.sp, color = OnSurfaceMuted)
             }
             Spacer(Modifier.weight(1f))
             Box(
-                Modifier
-                    .clip(RoundedCornerShape(8.dp))
+                Modifier.clip(RoundedCornerShape(8.dp))
                     .background(GreenActive.copy(alpha = 0.15f))
                     .padding(horizontal = 8.dp, vertical = 4.dp)
             ) {
-                Text("ROOT", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = GreenActive)
+                Text("ACTIVE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = GreenActive)
             }
         }
     }
@@ -167,18 +159,25 @@ private fun VirtualSpaceHeader(count: Int) {
 private fun ClonedAppCard(
     app: ClonedApp,
     ggInstalled: Boolean,
+    onOpen: () -> Unit,
     onRemove: () -> Unit,
     onGGAttach: () -> Unit
 ) {
+    val ctx = LocalContext.current
     var showRemoveDialog by remember { mutableStateOf(false) }
+    val isInstalled = remember(app.clonedPackageName) {
+        app.clonedPackageName.isNotEmpty() && CloneInstallManager.isInstalled(ctx, app.clonedPackageName)
+    }
 
     if (showRemoveDialog) {
         AlertDialog(
             onDismissRequest = { showRemoveDialog = false },
             title = { Text("Remove Clone?") },
-            text = { Text("This will delete all virtual data for ${app.appName}.") },
+            text = { Text("This will delete all virtual data and uninstall the cloned copy of ${app.appName}.") },
             confirmButton = {
-                TextButton(onClick = { showRemoveDialog = false; onRemove() }) { Text("Remove", color = RedError) }
+                TextButton(onClick = { showRemoveDialog = false; onRemove() }) {
+                    Text("Remove", color = RedError)
+                }
             },
             dismissButton = {
                 TextButton(onClick = { showRemoveDialog = false }) { Text("Cancel") }
@@ -192,44 +191,76 @@ private fun ClonedAppCard(
         colors = CardDefaults.cardColors(containerColor = SurfaceCard),
         border = BorderStroke(1.dp, VioletPrimary.copy(alpha = 0.2f))
     ) {
-        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box {
-                AsyncImage(
-                    model = app.icon,
-                    contentDescription = app.appName,
-                    modifier = Modifier.size(52.dp).clip(RoundedCornerShape(12.dp))
-                )
-                Box(
-                    Modifier
-                        .size(16.dp)
-                        .clip(CircleShape)
-                        .background(VioletPrimary)
-                        .align(Alignment.BottomEnd),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("${app.cloneIndex}", fontSize = 8.sp, color = Color.White, fontWeight = FontWeight.Bold)
-                }
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(app.appName, fontWeight = FontWeight.SemiBold, color = OnSurfaceLight, fontSize = 15.sp)
-                Text(app.packageName, fontSize = 10.sp, color = OnSurfaceMuted, maxLines = 1)
-                Spacer(Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    StatusChip("Clone #${app.cloneIndex}", VioletPrimary)
-                    StatusChip(VirtualFileSystem.run { app.sizeBytes.formatSize() }, SurfaceElevated)
-                }
-            }
-            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (ggInstalled) {
-                    IconButton(onClick = onGGAttach, modifier = Modifier.size(36.dp)) {
-                        Icon(Icons.Default.SportsEsports, "Attach GG",
-                            tint = GreenActive, modifier = Modifier.size(20.dp))
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box {
+                    AsyncImage(
+                        model = app.icon,
+                        contentDescription = app.appName,
+                        modifier = Modifier.size(52.dp).clip(RoundedCornerShape(12.dp))
+                    )
+                    Box(
+                        Modifier.size(16.dp).clip(CircleShape)
+                            .background(VioletPrimary).align(Alignment.BottomEnd),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("${app.cloneIndex}", fontSize = 8.sp, color = Color.White,
+                            fontWeight = FontWeight.Bold)
                     }
                 }
-                IconButton(onClick = { showRemoveDialog = true }, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Default.DeleteOutline, "Remove", tint = RedError, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(app.appName, fontWeight = FontWeight.SemiBold,
+                        color = OnSurfaceLight, fontSize = 15.sp)
+                    Text(app.packageName, fontSize = 10.sp, color = OnSurfaceMuted, maxLines = 1)
+                    Spacer(Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        StatusChip("Clone #${app.cloneIndex}", VioletPrimary)
+                        StatusChip(
+                            VirtualFileSystem.run { app.sizeBytes.formatSize() },
+                            SurfaceElevated
+                        )
+                        if (isInstalled) StatusChip("Installed", GreenActive)
+                    }
                 }
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    if (ggInstalled) {
+                        IconButton(onClick = onGGAttach, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Default.SportsEsports, "GG",
+                                tint = GreenActive, modifier = Modifier.size(20.dp))
+                        }
+                    }
+                    IconButton(onClick = { showRemoveDialog = true }, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Default.DeleteOutline, "Remove",
+                            tint = RedError, modifier = Modifier.size(20.dp))
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            // Open / Install button
+            Button(
+                onClick = onOpen,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isInstalled) GreenActive else VioletPrimary,
+                    contentColor = Color.White
+                )
+            ) {
+                Icon(
+                    if (isInstalled) Icons.Default.OpenInNew else Icons.Default.InstallMobile,
+                    null, modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    if (isInstalled) "Open Clone" else "Install & Open",
+                    fontSize = 13.sp, fontWeight = FontWeight.SemiBold
+                )
             }
         }
     }
@@ -238,8 +269,7 @@ private fun ClonedAppCard(
 @Composable
 private fun StatusChip(label: String, color: Color) {
     Box(
-        Modifier
-            .clip(RoundedCornerShape(6.dp))
+        Modifier.clip(RoundedCornerShape(6.dp))
             .background(color.copy(alpha = 0.15f))
             .padding(horizontal = 6.dp, vertical = 2.dp)
     ) {
@@ -260,20 +290,21 @@ private fun EmptyState(onPickApp: () -> Unit) {
             animationSpec = infiniteRepeatable(tween(1500), RepeatMode.Reverse), label = "scale"
         )
         Box(
-            Modifier
-                .size(100.dp)
-                .scale(scale)
-                .clip(CircleShape)
+            Modifier.size(100.dp).scale(scale).clip(CircleShape)
                 .background(VioletPrimary.copy(alpha = 0.12f)),
             contentAlignment = Alignment.Center
         ) {
             Icon(Icons.Default.CopyAll, null, tint = VioletPrimary, modifier = Modifier.size(44.dp))
         }
         Spacer(Modifier.height(24.dp))
-        Text("No Cloned Apps Yet", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = OnSurfaceLight)
+        Text("No Cloned Apps Yet", fontSize = 20.sp,
+            fontWeight = FontWeight.Bold, color = OnSurfaceLight)
         Spacer(Modifier.height(8.dp))
-        Text("Clone any app into an isolated virtual space.\nNo root required on your device.",
-            fontSize = 14.sp, color = OnSurfaceMuted, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Text(
+            "Clone any app into an isolated copy.\nAndroid will prompt you to install it.",
+            fontSize = 14.sp, color = OnSurfaceMuted,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
         Spacer(Modifier.height(32.dp))
         Button(
             onClick = onPickApp,
