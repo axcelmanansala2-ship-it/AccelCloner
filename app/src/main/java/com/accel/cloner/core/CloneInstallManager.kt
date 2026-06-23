@@ -1,11 +1,10 @@
 package com.accel.cloner.core
 
-import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageInstaller
 import android.net.Uri
 import android.util.Log
+import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -112,30 +111,25 @@ object CloneInstallManager {
         context.startActivity(intent)
     }
 
-    // ── PackageInstaller ──────────────────────────────────────────────────────
+    // ── APK installer via FileProvider ────────────────────────────────────────
 
+    /**
+     * Launches the system "Do you want to install this app?" dialog directly.
+     * Uses ACTION_INSTALL_PACKAGE + FileProvider — far more reliable than
+     * PackageInstaller.commit() which requires a BroadcastReceiver callback loop.
+     */
     private fun pushToInstaller(context: Context, apk: File) {
-        val pi = context.packageManager.packageInstaller
-        val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
-        val sessionId = pi.createSession(params)
-        pi.openSession(sessionId).use { session ->
-            apk.inputStream().buffered().use { src ->
-                session.openWrite("base.apk", 0, apk.length()).use { dst ->
-                    src.copyTo(dst)
-                    session.fsync(dst)
-                }
-            }
-            val callbackIntent = Intent(Intent.ACTION_MAIN).apply {
-                addCategory(Intent.CATEGORY_HOME)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            val pending = PendingIntent.getActivity(
-                context, sessionId, callbackIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
-            )
-            session.commit(pending.intentSender)
+        val authority = "${context.packageName}.provider"
+        val uri: Uri = FileProvider.getUriForFile(context, authority, apk)
+        val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+            putExtra(Intent.EXTRA_INSTALLER_PACKAGE_NAME, context.packageName)
         }
-        Log.d(TAG, "PackageInstaller session $sessionId committed — Android install dialog should appear")
+        context.startActivity(intent)
+        Log.d(TAG, "System install dialog launched for ${apk.name} (${apk.length() / 1024} KB)")
     }
 }
 
