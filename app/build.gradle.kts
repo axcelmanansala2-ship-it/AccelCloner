@@ -6,19 +6,19 @@ plugins {
 
 android {
     namespace = "com.accel.cloner"
-    compileSdk = 35
+    compileSdk = 34
 
     defaultConfig {
         applicationId = "com.accel.cloner"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"
     }
 
     signingConfigs {
         create("release") {
-            storeFile = file(System.getProperty("KEYSTORE_PATH") ?: "keystore.jks")
+            storeFile = rootProject.file(System.getenv("KEYSTORE_PATH") ?: "keystore.jks")
             storePassword = System.getenv("KEYSTORE_PASS") ?: ""
             keyAlias = System.getenv("KEY_ALIAS") ?: ""
             keyPassword = System.getenv("KEY_PASS") ?: ""
@@ -64,11 +64,11 @@ dependencies {
     implementation(libs.androidx.activity)
     implementation(libs.androidx.constraintlayout)
     implementation(libs.androidx.recyclerview)
-    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
+    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     kapt(libs.androidx.room.compiler)
 }
