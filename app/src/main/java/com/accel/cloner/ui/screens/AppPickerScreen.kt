@@ -144,8 +144,8 @@ private fun PickerAppCard(
     ) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             AsyncImage(
-                model = app.packageName,
-                contentDescription = null,
+                model = app.icon,
+                contentDescription = app.appName,
                 modifier = Modifier.size(46.dp).clip(RoundedCornerShape(10.dp))
             )
             Spacer(Modifier.width(12.dp))

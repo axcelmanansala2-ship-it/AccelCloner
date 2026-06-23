@@ -55,8 +55,8 @@ class VirtualDaemonService : Service() {
     }
 
     private fun ensureVirtualBaseDir() {
-        File("/sdcard/Android/data/${VirtualConfig.CLONER_PKG}/${VirtualConfig.VIRTUAL_SPACE_DIR}")
-            .mkdirs()
+        val base = getExternalFilesDir(null) ?: filesDir
+        File(base, VirtualConfig.VIRTUAL_SPACE_DIR).mkdirs()
     }
 
     // ── Handlers ──────────────────────────────────────────────────────────────

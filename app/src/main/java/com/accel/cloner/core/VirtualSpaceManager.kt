@@ -40,7 +40,7 @@ class VirtualSpaceManager(private val context: Context) {
                 val parts = key.removePrefix("clone_").split("_")
                 val packageName = parts.dropLast(1).joinToString("_")
                 val index = parts.last().toIntOrNull() ?: 0
-                val vPath = VirtualConfig.virtualDataPath(packageName, index)
+                val vPath = VirtualConfig.virtualDataPath(context, packageName, index)
                 try {
                     val pi = pm.getPackageInfo(packageName, 0)
                     ClonedApp(
@@ -49,7 +49,7 @@ class VirtualSpaceManager(private val context: Context) {
                         icon = pi.applicationInfo?.loadIcon(pm),
                         cloneIndex = index,
                         virtualDataPath = vPath,
-                        sizeBytes = VirtualFileSystem.getVirtualSize(packageName, index)
+                        sizeBytes = VirtualFileSystem.getVirtualSize(context, packageName, index)
                     )
                 } catch (e: Exception) {
                     ClonedApp(packageName, packageName, null, index, vPath, 0L)
@@ -61,19 +61,19 @@ class VirtualSpaceManager(private val context: Context) {
         withContext(Dispatchers.IO) {
             Log.d(TAG, "Cloning $pkg index=$cloneIndex")
             try {
-                val ok = VirtualFileSystem.initVirtualSpace(pkg, cloneIndex)
+                val ok = VirtualFileSystem.initVirtualSpace(context, pkg, cloneIndex)
                 if (!ok) return@withContext VirtualSpaceResult.Failure("Failed to create virtual dirs")
 
                 val sourceApk = pm.getApplicationInfo(pkg, 0).sourceDir
-                val destApk = File(VirtualConfig.pluginApkPath(pkg, cloneIndex))
+                val destApk = File(VirtualConfig.pluginApkPath(context, pkg, cloneIndex))
                 if (!destApk.exists()) {
                     VirtualFileSystem.copyFile(File(sourceApk), destApk)
                 }
 
-                VirtualRootSim.exec("chmod -R 0771 \"${VirtualConfig.virtualDataPath(pkg, cloneIndex)}\"")
+                VirtualRootSim.exec("chmod -R 0771 \"${VirtualConfig.virtualDataPath(context, pkg, cloneIndex)}\"")
                 prefs.edit().putString("clone_${pkg}_$cloneIndex", pkg).apply()
 
-                val path = VirtualConfig.virtualDataPath(pkg, cloneIndex)
+                val path = VirtualConfig.virtualDataPath(context, pkg, cloneIndex)
                 Log.d(TAG, "Clone success: $pkg -> $path")
                 VirtualSpaceResult.Success(pkg, cloneIndex, path)
             } catch (e: Exception) {
@@ -84,7 +84,7 @@ class VirtualSpaceManager(private val context: Context) {
 
     suspend fun removeClone(pkg: String, cloneIndex: Int): Boolean =
         withContext(Dispatchers.IO) {
-            val cleared = VirtualFileSystem.clearVirtualSpace(pkg, cloneIndex)
+            val cleared = VirtualFileSystem.clearVirtualSpace(context, pkg, cloneIndex)
             if (cleared) prefs.edit().remove("clone_${pkg}_$cloneIndex").apply()
             cleared
         }

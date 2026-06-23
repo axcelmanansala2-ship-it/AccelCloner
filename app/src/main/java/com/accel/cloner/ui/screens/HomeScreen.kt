@@ -195,8 +195,8 @@ private fun ClonedAppCard(
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Box {
                 AsyncImage(
-                    model = app.packageName,
-                    contentDescription = null,
+                    model = app.icon,
+                    contentDescription = app.appName,
                     modifier = Modifier.size(52.dp).clip(RoundedCornerShape(12.dp))
                 )
                 Box(

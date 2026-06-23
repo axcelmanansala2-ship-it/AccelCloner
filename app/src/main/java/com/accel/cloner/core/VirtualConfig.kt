@@ -1,5 +1,7 @@
 package com.accel.cloner.core
 
+import android.content.Context
+
 object VirtualConfig {
     const val CLONER_PKG         = "com.accel.cloner"
     const val VIRTUAL_SPACE_DIR  = "virtual_space"
@@ -11,22 +13,29 @@ object VirtualConfig {
     const val VIRTUAL_SU_SOCKET  = "accel_virtual_su"
     const val MAX_CLONES         = 5
 
-    /** Base dir: /sdcard/Android/data/com.accel.cloner/virtual_space/<pkg>/ */
-    fun virtualDataPath(pkg: String, cloneIndex: Int = 0): String =
-        "/sdcard/Android/data/$CLONER_PKG/$VIRTUAL_SPACE_DIR/${pkg}_$cloneIndex"
+    /**
+     * Returns the writable base dir owned by this app — no special permissions needed.
+     * Uses external files dir (shows in Files app) with internal dir as fallback.
+     */
+    fun storageBase(context: Context): String =
+        (context.getExternalFilesDir(null) ?: context.filesDir).absolutePath
 
-    fun virtualFilesPath(pkg: String, cloneIndex: Int = 0) =
-        "${virtualDataPath(pkg, cloneIndex)}/files"
+    /** Base dir: <externalFilesDir>/virtual_space/<pkg>_<cloneIndex>/ */
+    fun virtualDataPath(context: Context, pkg: String, cloneIndex: Int = 0): String =
+        "${storageBase(context)}/$VIRTUAL_SPACE_DIR/${pkg}_$cloneIndex"
 
-    fun virtualDbPath(pkg: String, cloneIndex: Int = 0) =
-        "${virtualDataPath(pkg, cloneIndex)}/databases"
+    fun virtualFilesPath(context: Context, pkg: String, cloneIndex: Int = 0) =
+        "${virtualDataPath(context, pkg, cloneIndex)}/files"
 
-    fun virtualPrefsPath(pkg: String, cloneIndex: Int = 0) =
-        "${virtualDataPath(pkg, cloneIndex)}/shared_prefs"
+    fun virtualDbPath(context: Context, pkg: String, cloneIndex: Int = 0) =
+        "${virtualDataPath(context, pkg, cloneIndex)}/databases"
 
-    fun pluginApkPath(pkg: String, cloneIndex: Int = 0) =
-        "${virtualDataPath(pkg, cloneIndex)}/base.apk"
+    fun virtualPrefsPath(context: Context, pkg: String, cloneIndex: Int = 0) =
+        "${virtualDataPath(context, pkg, cloneIndex)}/shared_prefs"
 
-    fun odexPath(pkg: String, cloneIndex: Int = 0) =
-        "${virtualDataPath(pkg, cloneIndex)}/$ODEX_DIR"
+    fun pluginApkPath(context: Context, pkg: String, cloneIndex: Int = 0) =
+        "${virtualDataPath(context, pkg, cloneIndex)}/base.apk"
+
+    fun odexPath(context: Context, pkg: String, cloneIndex: Int = 0) =
+        "${virtualDataPath(context, pkg, cloneIndex)}/$ODEX_DIR"
 }
