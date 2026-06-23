@@ -98,10 +98,7 @@ fun HomeScreen(onPickApp: () -> Unit) {
                         ClonedAppCard(
                             app = app,
                             ggInstalled = ggInstalled,
-                            onOpen = {
-                                val launched = CloneInstallManager.launch(ctx, app.clonedPackageName)
-                                if (!launched) snackMsg = "Install the clone first — check system notifications"
-                            },
+                            manager = manager,
                             onRemove = {
                                 scope.launch {
                                     manager.removeClone(app.packageName, app.cloneIndex)
@@ -112,7 +109,8 @@ fun HomeScreen(onPickApp: () -> Unit) {
                             onGGAttach = {
                                 VirtualDaemonService.attachGG(ctx, app.packageName)
                                 snackMsg = "GG attached to ${app.appName}"
-                            }
+                            },
+                            onMessage = { snackMsg = it }
                         )
                     }
                     item { Spacer(Modifier.height(80.dp)) }
@@ -159,14 +157,19 @@ private fun VirtualSpaceHeader(count: Int) {
 private fun ClonedAppCard(
     app: ClonedApp,
     ggInstalled: Boolean,
-    onOpen: () -> Unit,
+    manager: VirtualSpaceManager,
     onRemove: () -> Unit,
-    onGGAttach: () -> Unit
+    onGGAttach: () -> Unit,
+    onMessage: (String) -> Unit
 ) {
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     var showRemoveDialog by remember { mutableStateOf(false) }
-    val isInstalled = remember(app.clonedPackageName) {
-        app.clonedPackageName.isNotEmpty() && CloneInstallManager.isInstalled(ctx, app.clonedPackageName)
+    var isInstalling by remember { mutableStateOf(false) }
+    var isInstalled by remember {
+        mutableStateOf(
+            app.clonedPackageName.isNotEmpty() && CloneInstallManager.isInstalled(ctx, app.clonedPackageName)
+        )
     }
 
     if (showRemoveDialog) {
@@ -221,6 +224,7 @@ private fun ClonedAppCard(
                             SurfaceElevated
                         )
                         if (isInstalled) StatusChip("Installed", GreenActive)
+                        else StatusChip("Not installed", OnSurfaceMuted)
                     }
                 }
                 Column(
@@ -242,9 +246,37 @@ private fun ClonedAppCard(
 
             Spacer(Modifier.height(10.dp))
 
-            // Open / Install button
             Button(
-                onClick = onOpen,
+                onClick = {
+                    // Re-check install status first
+                    val nowInstalled = app.clonedPackageName.isNotEmpty() &&
+                        CloneInstallManager.isInstalled(ctx, app.clonedPackageName)
+                    if (nowInstalled) {
+                        isInstalled = true
+                        val launched = CloneInstallManager.launch(ctx, app.clonedPackageName)
+                        if (!launched) onMessage("Could not launch — app may have been uninstalled")
+                    } else {
+                        // Trigger / re-trigger install dialog
+                        scope.launch {
+                            isInstalling = true
+                            val workDir = java.io.File(
+                                VirtualConfig.virtualDataPath(ctx, app.packageName, app.cloneIndex),
+                                "install_work"
+                            )
+                            val result = CloneInstallManager.reinstall(
+                                ctx, app.packageName, app.cloneIndex, workDir
+                            )
+                            isInstalling = false
+                            when (result) {
+                                is CloneInstallResult.Success ->
+                                    onMessage("Android install dialog should appear — tap Install")
+                                is CloneInstallResult.Failure ->
+                                    onMessage("Install failed: ${result.reason}")
+                            }
+                        }
+                    }
+                },
+                enabled = !isInstalling,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.buttonColors(
@@ -252,13 +284,25 @@ private fun ClonedAppCard(
                     contentColor = Color.White
                 )
             ) {
-                Icon(
-                    if (isInstalled) Icons.Default.OpenInNew else Icons.Default.InstallMobile,
-                    null, modifier = Modifier.size(16.dp)
-                )
-                Spacer(Modifier.width(6.dp))
+                if (isInstalling) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        if (isInstalled) Icons.Default.OpenInNew else Icons.Default.InstallMobile,
+                        null, modifier = Modifier.size(16.dp)
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
                 Text(
-                    if (isInstalled) "Open Clone" else "Install & Open",
+                    when {
+                        isInstalling -> "Preparing…"
+                        isInstalled  -> "Open Clone"
+                        else         -> "Install & Open"
+                    },
                     fontSize = 13.sp, fontWeight = FontWeight.SemiBold
                 )
             }

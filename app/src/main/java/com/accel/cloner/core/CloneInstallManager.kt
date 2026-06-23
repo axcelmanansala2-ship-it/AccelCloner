@@ -16,9 +16,14 @@ import java.io.File
  *  2. Repackage the source APK (new package name in binary manifest)
  *  3. V1-sign the repackaged APK
  *  4. Install via PackageInstaller → system shows the "Install" dialog
+ *
+ * [reinstall] can be called from the UI at any time to re-show the install dialog
+ * using the already-built signed APK, or re-build it if missing.
  */
 object CloneInstallManager {
     private const val TAG = "CloneInstallManager"
+
+    // ── Full pipeline (called once during cloneApp) ───────────────────────────
 
     suspend fun install(
         context: Context,
@@ -42,7 +47,7 @@ object CloneInstallManager {
             repackaged.delete()
 
             Log.d(TAG, "Installing (${signed.length() / 1024} KB)…")
-            triggerInstall(context, signed)
+            pushToInstaller(context, signed)
 
             CloneInstallResult.Success(clonePkg)
         } catch (e: Exception) {
@@ -50,6 +55,39 @@ object CloneInstallManager {
             CloneInstallResult.Failure(e.message ?: "Unknown error")
         }
     }
+
+    /**
+     * Called from the "Install & Open" button.
+     * Re-uses the already-signed APK if present; otherwise rebuilds from scratch.
+     */
+    suspend fun reinstall(
+        context: Context,
+        originalPkg: String,
+        cloneIndex: Int,
+        workDir: File
+    ): CloneInstallResult = withContext(Dispatchers.IO) {
+        val signed = File(workDir, "signed.apk")
+        if (signed.exists() && signed.length() > 0) {
+            Log.d(TAG, "Re-using existing signed APK (${signed.length() / 1024} KB)…")
+            try {
+                pushToInstaller(context, signed)
+                CloneInstallResult.Success(buildClonePkg(originalPkg, cloneIndex))
+            } catch (e: Exception) {
+                Log.e(TAG, "Reinstall failed", e)
+                CloneInstallResult.Failure(e.message ?: "Reinstall failed")
+            }
+        } else {
+            // Signed APK gone — rebuild from original
+            val sourceApk = try {
+                context.packageManager.getApplicationInfo(originalPkg, 0).sourceDir
+            } catch (e: Exception) {
+                return@withContext CloneInstallResult.Failure("Original app not found on device")
+            }
+            install(context, originalPkg, cloneIndex, sourceApk, workDir)
+        }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
 
     /** Stable, reproducible clone package name for a given original + index. */
     fun buildClonePkg(originalPkg: String, cloneIndex: Int): String {
@@ -76,7 +114,7 @@ object CloneInstallManager {
 
     // ── PackageInstaller ──────────────────────────────────────────────────────
 
-    private fun triggerInstall(context: Context, apk: File) {
+    private fun pushToInstaller(context: Context, apk: File) {
         val pi = context.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
         val sessionId = pi.createSession(params)
@@ -87,16 +125,17 @@ object CloneInstallManager {
                     session.fsync(dst)
                 }
             }
-            val intent = Intent(Intent.ACTION_MAIN).apply {
+            val callbackIntent = Intent(Intent.ACTION_MAIN).apply {
                 addCategory(Intent.CATEGORY_HOME)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            val pi2 = PendingIntent.getActivity(
-                context, sessionId, intent,
+            val pending = PendingIntent.getActivity(
+                context, sessionId, callbackIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
             )
-            session.commit(pi2.intentSender)
+            session.commit(pending.intentSender)
         }
+        Log.d(TAG, "PackageInstaller session $sessionId committed — Android install dialog should appear")
     }
 }
 
